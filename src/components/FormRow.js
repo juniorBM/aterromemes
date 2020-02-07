@@ -20,6 +20,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFF',
         marginTop: 5,
         marginBottom: 5,
+        // backgroundColor: 'yellow'
 
     },
     first: {

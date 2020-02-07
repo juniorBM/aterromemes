@@ -1,18 +1,20 @@
 import React from 'react';
 import {
     View, TextInput, Text, StyleSheet,
-    TouchableNativeFeedback, ActivityIndicator, Dimensions
+    TouchableNativeFeedback, AsyncStorage, Alert
 } from 'react-native';
 
+import { StackActions, NavigationActions } from 'react-navigation'
 import FormRow from '../../components/FormRow';
 import Message from '../../components/Message';
 import Overlay from '../../components/Overlay';
 import Validate from '../../utils/validatorFields';
-
+import { connect } from 'react-redux'
+import { login, checkLogin } from '../../actions';
 
 import { PURPLE_500, PURPLE_300, PURPLE_50, RED_500 } from '../../utils/colors';
 
-export default class LoginPage extends React.Component {
+class LoginPage extends React.Component {
 
     constructor(props) {
         super(props);
@@ -23,7 +25,8 @@ export default class LoginPage extends React.Component {
             isLoading: false,
             message: '',
             errorEmail: '',
-            errorPassword: ''
+            errorPassword: '',
+            isLoadingPage: true
         };
 
         this.validations = {
@@ -40,7 +43,7 @@ export default class LoginPage extends React.Component {
                 'rules_value': { 'minLength': 6 },
                 'value': '',
                 'messageRequired': 'Senha é obrigatório.',
-                'messageMinLength': 'Senha deve ter no mínimo 6 caracteres'
+                'messageMinLength': 'Senha deve ter no mínimo 6 caracteres.'
             }
         }
 
@@ -53,13 +56,38 @@ export default class LoginPage extends React.Component {
         });
     }
 
+    async componentDidMount() {
+        var user = await AsyncStorage.getItem('user');
+        user = JSON.parse(user);
+        
+        if (user) {
+            console.log(user.id, user.api_token);
+            this.props.checkLogin({user_id: user.id, api_token: user.api_token})
+                .then((data) => {
+                    this.props.navigation.replace('FeedListPage');
+                }).catch(async (err) => {
+                    await AsyncStorage.removeItem('user');
+                    this.setState({
+                        isLoadingPage: false
+                    });
+                });
+
+        } else {
+            this.setState({
+                isLoadingPage: false
+            });
+
+        }
+    }
+
     login() {
+        const { email, password } = this.state;
         this.setState({
             isLoading: true,
         });
 
-        this.validations['email'].value = this.state.email;
-        this.validations['password'].value = this.state.password;
+        this.validations['email'].value = email;
+        this.validations['password'].value = password;
 
         const nameFields = ['email', 'password'];
 
@@ -75,14 +103,59 @@ export default class LoginPage extends React.Component {
             )
 
         } else {
-            //Dispatch action assync
+            this.props.login({ email, password })
+                .then((data) => {
+
+                    if (data.data.status == 'success') {
+                        const resetAction = StackActions.reset({
+                            index: 0,
+                            actions: [NavigationActions.navigate({ routeName: 'FeedListPage' })],
+                        });
+
+                        return this.props.navigation.dispatch(resetAction);
+                    }
+
+
+
+                }).catch((err) => {
+                    const { data } = err.response;
+                    console.log(err.response);
+                    this.setState(
+                        {
+                            isLoading: false
+                        }
+                    );
+                    if (data.status == 'error') {
+                        return new Promise((resolve, reject) => {
+                            Alert.alert(
+                                'Erro ao fazer login',
+                                data.result,
+                                [{
+                                    text: 'OK',
+                                    onPress: () => resolve(),
+                                    style: 'cancel'
+                                },
+                                ],
+                                { cancelable: false });
+                        })
+
+                    } else {
+                        this.setState(
+                            {
+                                errorEmail: data.email ? data.email[0] : '',
+                                errorPassword: data.password ? data.password[0] : '',
+                            }
+                        );
+                    }
+
+
+                })
         }
 
 
     }
 
     renderButton() {
-
         if (!this.state.isLoading)
             return (
                 <View style={styles.containerButton}>
@@ -107,44 +180,43 @@ export default class LoginPage extends React.Component {
     }
 
     render() {
-        const validationEmail = ['required', 'email'];
+        return this.state.isLoadingPage ? <Overlay /> :
+            (
+                <View style={styles.container}>
+                    <View style={styles.titleC}>
+                        <Text style={styles.title}>Efetue o Login para ter acesso as postagens</Text>
+                    </View>
+                    <View style={styles.form}>
+                        <FormRow>
+                            <TextInput onChangeText={value =>
+                                this.onChangeHandler('email', value)
+                            }
+                                value={this.state.email}
+                                keyboardType="email-address"
+                                placeholder="Informe o E-mail"
+                                style={styles.textInput}
+                                selectionColor={PURPLE_500} />
+                            {this.state.errorEmail ?
+                                <Message styles={styles.messageError} message={this.state.errorEmail} />
+                                : null}
+                        </FormRow>
+                        <FormRow>
+                            <TextInput onChangeText={value => this.onChangeHandler('password', value)}
+                                value={this.state.password}
+                                secureTextEntry
+                                placeholder="******"
+                                style={styles.textInput}
+                                selectionColor={PURPLE_500} />
+                            {this.state.errorPassword ?
+                                <Message styles={styles.messageError} message={this.state.errorPassword} />
+                                : null}
+                        </FormRow>
 
-        return (
-            <View style={styles.container}>
-                <View style={styles.titleC}>
-                    <Text style={styles.title}>Efetue o Login para ter acesso as postagens.</Text>
+                        {this.renderButton()}
+                    </View>
+                    {this.renderOverlay()}
                 </View>
-                <View style={styles.form}>
-                    <FormRow>
-                        <TextInput onChangeText={value =>
-                            this.onChangeHandler('email', value)
-                        }
-                            value={this.state.email}
-                            keyboardType="email-address"
-                            placeholder="Informe o E-mail"
-                            style={styles.textInput}
-                            selectionColor={PURPLE_500} />
-                        {this.state.errorEmail ?
-                            <Message styles={styles.messageError} message={this.state.errorEmail} />
-                            : null}
-                    </FormRow>
-                    <FormRow>
-                        <TextInput onChangeText={value => this.onChangeHandler('password', value)}
-                            value={this.state.password}
-                            secureTextEntry
-                            placeholder="******"
-                            style={styles.textInput}
-                            selectionColor={PURPLE_500} />
-                        {this.state.errorPassword ?
-                            <Message styles={styles.messageError} message={this.state.errorPassword} />
-                            : null}
-                    </FormRow>
-
-                    {this.renderButton()}
-                </View>
-                {this.renderOverlay()}
-            </View>
-        )
+            )
     }
 }
 
@@ -201,4 +273,6 @@ const styles = StyleSheet.create({
     messageError: {
         color: RED_500
     }
-})
+});
+
+export default connect(null, { login, checkLogin })(LoginPage);
